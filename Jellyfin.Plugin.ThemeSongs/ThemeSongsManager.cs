@@ -39,8 +39,8 @@ namespace Jellyfin.Plugin.ThemeSongs
                 IncludeItemTypes = new[] {BaseItemKind.Series},
                 IsVirtualItem = false,
                 Recursive = true,
-                HasTvdbId = true
-            }).Select(m => m as Series);
+            }).Where(s => s.ProviderIds.ContainsKey("Tvdb"))
+                .Select(m => m as Series);
         }
 
 

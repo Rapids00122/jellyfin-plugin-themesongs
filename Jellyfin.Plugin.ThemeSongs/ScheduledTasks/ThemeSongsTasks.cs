@@ -36,7 +36,7 @@ namespace Jellyfin.Plugin.ThemeSongs.ScheduledTasks
             // Run this task every 24 hours
             yield return new TaskTriggerInfo
             {
-                Type = TaskTriggerInfo.TriggerInterval, 
+                Type = TaskTriggerInfoType.IntervalTrigger, 
                 IntervalTicks = TimeSpan.FromHours(24).Ticks
             };
         }
