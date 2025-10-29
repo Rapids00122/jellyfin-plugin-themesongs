@@ -39,32 +39,86 @@ namespace Jellyfin.Plugin.ThemeSongs
                 IncludeItemTypes = new[] {BaseItemKind.Series},
                 IsVirtualItem = false,
                 Recursive = true,
-            }).Where(s => s.ProviderIds.ContainsKey("Tvdb"))
-                .Select(m => m as Series);
+            }).OfType<Series>();
+        }
+
+        private static string? GetConfiguredTemplate()
+        {
+            var configuredTemplate = Plugin.Instance?.Configuration?.ThemeSongUrlTemplate;
+            return string.IsNullOrWhiteSpace(configuredTemplate) ? null : configuredTemplate;
+        }
+
+        private bool TryBuildThemeSongUrl(Series series, string template, out string link)
+        {
+            var result = template;
+            var replacements = new List<(string Placeholder, string Value, string Name)>
+            {
+                ("{tvdbId}", series.GetProviderId(MetadataProvider.Tvdb), "tvdbId"),
+                ("{imdbId}", series.GetProviderId(MetadataProvider.Imdb), "imdbId"),
+                ("{tmdbId}", series.GetProviderId(MetadataProvider.Tmdb), "tmdbId")
+            };
+
+            var missingPlaceholders = new List<string>();
+
+            foreach (var replacement in replacements)
+            {
+                if (!result.Contains(replacement.Placeholder, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(replacement.Value))
+                {
+                    missingPlaceholders.Add(replacement.Name);
+                    continue;
+                }
+
+                result = result.Replace(replacement.Placeholder, replacement.Value, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (missingPlaceholders.Count > 0)
+            {
+                _logger.LogInformation("Skipping theme song download for {seriesName}. Missing provider ids: {missingIds}", series.Name, string.Join(", ", missingPlaceholders));
+                link = string.Empty;
+                return false;
+            }
+
+            link = result;
+            return true;
         }
 
 
         public void DownloadAllThemeSongs()
         {
             var series = GetSeriesFromLibrary();
+            var template = GetConfiguredTemplate();
+            if (string.IsNullOrWhiteSpace(template))
+            {
+                _logger.LogInformation("Skipping theme song download: no URL template configured.");
+                return;
+            }
+
             foreach (var serie in series)
             {
-                if (serie.GetThemeSongs().Count() == 0)
+                if (!serie.GetThemeSongs().Any())
                 {
-                    var tvdb = serie.GetProviderId(MetadataProvider.Tvdb);
+                    if (!TryBuildThemeSongUrl(serie, template, out var link))
+                    {
+                        continue;
+                    }
+
                     var themeSongPath = Path.Join(serie.Path, "theme.mp3");
-                    var link = $"http://tvthemes.plexapp.com/{tvdb}.mp3";
                     _logger.LogDebug("Trying to download {seriesName}, {link}", serie.Name, link);
 
                     try
                     {
                         using var client = new WebClient();
                         client.DownloadFile(link, themeSongPath);
-                        _logger.LogInformation("{seriesName} theme song succesfully downloaded", serie.Name);
+                        _logger.LogInformation("{seriesName} theme song successfully downloaded from {link}", serie.Name, link);
                     }
                     catch (Exception e)
                     {
-                        _logger.LogInformation("{seriesName} theme song not in database, or no internet connection", serie.Name);
+                        _logger.LogWarning(e, "Unable to download theme song for {seriesName} from {link}", serie.Name, link);
                     }
                 }
             }        

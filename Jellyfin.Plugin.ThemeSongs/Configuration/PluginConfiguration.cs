@@ -4,5 +4,6 @@ namespace Jellyfin.Plugin.ThemeSongs.Configuration
 {
     public class PluginConfiguration : BasePluginConfiguration
     {
+        public string ThemeSongUrlTemplate { get; set; } = "";
     }
 }
