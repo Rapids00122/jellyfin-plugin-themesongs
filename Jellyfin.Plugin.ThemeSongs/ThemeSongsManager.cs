@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Controller.Entities;
@@ -122,6 +123,70 @@ namespace Jellyfin.Plugin.ThemeSongs
                     }
                 }
             }        
+        }
+
+
+        public void NormalizeAllThemeSongsVolume()
+        {
+            var series = GetSeriesFromLibrary();
+
+            foreach (var serie in series)
+            {
+                var dir = serie.Path;
+                if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+                {
+                    continue;
+                }
+
+                // Find files named like "theme.*" in the series folder
+                var files = Directory.GetFiles(dir, "theme.*", SearchOption.TopDirectoryOnly);
+
+                foreach (var file in files)
+                {
+                    try
+                    {
+                        var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + Path.GetExtension(file));
+
+                        var args = $"-y -i \"{file}\" -filter:a \"volume=0.5\" -vn -c:a libmp3lame -q:a 2 \"{temp}\"";
+
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = "ffmpeg",
+                            Arguments = args,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+
+                        using var process = Process.Start(psi);
+                        if (process == null)
+                        {
+                            _logger.LogWarning("FFmpeg process could not be started for {file}", file);
+                            continue;
+                        }
+
+                        var stderr = process.StandardError.ReadToEnd();
+                        var stdout = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+
+                        if (process.ExitCode != 0)
+                        {
+                            _logger.LogWarning("FFmpeg failed for {file}: {err}", file, stderr);
+                            if (File.Exists(temp)) File.Delete(temp);
+                            continue;
+                        }
+
+                        File.Copy(temp, file, true);
+                        File.Delete(temp);
+                        _logger.LogInformation("Normalized volume for {file}", file);
+                    }
+                    catch (Exception e)
+                    {
+                        _logger.LogWarning(e, "Error normalizing volume for {file}", file);
+                    }
+                }
+            }
         }
 
 
